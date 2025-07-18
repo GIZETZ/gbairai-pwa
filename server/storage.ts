@@ -5,6 +5,7 @@ import {
   conversations, 
   messages,
   follows,
+  notifications,
   type User, 
   type InsertUser,
   type UpdateUser,
@@ -24,7 +25,7 @@ import {
   type LocationData
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql, inArray } from "drizzle-orm";
+import { eq, desc, and, sql, inArray, gt } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import createMemoryStore from "memorystore";
@@ -39,7 +40,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: UpdateUser): Promise<User | undefined>;
-  
+
   createGbairai(gbairai: InsertGbairai): Promise<Gbairai>;
   getGbairais(limit?: number, offset?: number): Promise<GbairaiWithInteractions[]>;
   getGbairaiById(id: number): Promise<GbairaiWithInteractions | undefined>;
@@ -47,13 +48,13 @@ export interface IStorage {
   getGbairaisByLocation(location: LocationData, radius: number, limit?: number): Promise<GbairaiWithInteractions[]>;
   getUserGbairais(userId: number, limit?: number): Promise<GbairaiWithInteractions[]>;
   deleteGbairai(id: number, userId: number): Promise<boolean>;
-  
+
   createInteraction(interaction: InsertInteraction): Promise<Interaction>;
   getInteractionsByGbairai(gbairaiId: number): Promise<Interaction[]>;
   getUserInteraction(userId: number, gbairaiId: number, type: string): Promise<Interaction | undefined>;
   deleteInteraction(id: number, userId: number): Promise<boolean>;
   getRepliesByCommentId(commentId: number): Promise<Interaction[]>;
-  
+
   // Messagerie
   getAllUsers(): Promise<User[]>;
   createConversation(conversation: InsertConversation): Promise<Conversation>;
@@ -62,7 +63,7 @@ export interface IStorage {
   getConversationByParticipants(participants: number[]): Promise<Conversation | undefined>;
   createMessage(message: InsertMessage): Promise<Message>;
   getMessagesByConversationId(conversationId: number): Promise<Message[]>;
-  
+
   // Profils et follows
   getUserProfile(userId: number): Promise<UserWithStats | undefined>;
   updateUserProfile(userId: number, profile: UserProfile): Promise<User | undefined>;
@@ -73,12 +74,20 @@ export interface IStorage {
   getUserFollowing(userId: number): Promise<User[]>;
   getUserStats(userId: number): Promise<{ followersCount: number; followingCount: number; gbairaisCount: number; }>;
   searchUsers(query: string, currentUserId?: number): Promise<UserWithStats[]>;
-  
+
   sessionStore: any;
 }
 
 export class DatabaseStorage implements IStorage {
   sessionStore: any;
+  public users = users;
+  public gbairais = gbairais;
+  public interactions = interactions;
+  public conversations = conversations;
+  public messages = messages;
+  public follows = follows;
+  public notifications = notifications;
+  private db: any;
 
   constructor() {
     this.sessionStore = new PostgresSessionStore({ 
@@ -86,6 +95,7 @@ export class DatabaseStorage implements IStorage {
       createTableIfMissing: true,
       tableName: 'session'
     });
+    this.db = db;
   }
 
   async getUser(id: number): Promise<User | undefined> {
@@ -143,9 +153,9 @@ export class DatabaseStorage implements IStorage {
     for (const row of gbairaisData) {
       const gbairai = row.gbairais;
       const user = row.users;
-      
+
       const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
-      
+
       const likesCount = interactionsData.filter(i => i.type === 'like').length;
       const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
       const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -174,9 +184,9 @@ export class DatabaseStorage implements IStorage {
 
     const gbairai = gbairaiData.gbairais;
     const user = gbairaiData.users;
-    
+
     const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
-    
+
     const likesCount = interactionsData.filter(i => i.type === 'like').length;
     const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
     const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -205,9 +215,9 @@ export class DatabaseStorage implements IStorage {
     for (const row of gbairaisData) {
       const gbairai = row.gbairais;
       const user = row.users;
-      
+
       const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
-      
+
       const likesCount = interactionsData.filter(i => i.type === 'like').length;
       const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
       const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -241,7 +251,7 @@ export class DatabaseStorage implements IStorage {
     for (const row of gbairaisData) {
       const gbairai = row.gbairais;
       const user = row.users;
-      
+
       // Check if gbairai has location data
       if (gbairai.location && typeof gbairai.location === 'object') {
         const gbairaiLocation = gbairai.location as any;
@@ -253,10 +263,10 @@ export class DatabaseStorage implements IStorage {
             gbairaiLocation.latitude,
             gbairaiLocation.longitude
           );
-          
+
           if (distance <= radius) {
             const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
-            
+
             const likesCount = interactionsData.filter(i => i.type === 'like').length;
             const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
             const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -291,9 +301,9 @@ export class DatabaseStorage implements IStorage {
     for (const row of gbairaisData) {
       const gbairai = row.gbairais;
       const user = row.users;
-      
+
       const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
-      
+
       const likesCount = interactionsData.filter(i => i.type === 'like').length;
       const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
       const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -317,7 +327,7 @@ export class DatabaseStorage implements IStorage {
       .set({ status: 'deleted' })
       .where(and(eq(gbairais.id, id), eq(gbairais.userId, userId)))
       .returning();
-    
+
     return !!result;
   }
 
@@ -349,7 +359,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(interactions.userId, users.id))
       .where(eq(interactions.gbairaiId, gbairaiId))
       .orderBy(desc(interactions.createdAt));
-    
+
     return result as any;
   }
 
@@ -370,7 +380,7 @@ export class DatabaseStorage implements IStorage {
       .delete(interactions)
       .where(and(eq(interactions.id, id), eq(interactions.userId, userId)))
       .returning();
-    
+
     return !!result;
   }
 
@@ -397,7 +407,7 @@ export class DatabaseStorage implements IStorage {
         eq(interactions.type, 'comment')
       ))
       .orderBy(desc(interactions.createdAt));
-    
+
     return result as any;
   }
 
@@ -420,7 +430,7 @@ export class DatabaseStorage implements IStorage {
     const userConversations = await db.select().from(conversations)
       .where(sql`${conversations.participants} @> ${JSON.stringify([userId])}`)
       .orderBy(desc(conversations.lastMessageAt));
-    
+
     return userConversations;
   }
 
@@ -441,12 +451,12 @@ export class DatabaseStorage implements IStorage {
     const [newMessage] = await db.insert(messages)
       .values(message)
       .returning();
-    
+
     // Mettre à jour la dernière activité de la conversation
     await db.update(conversations)
       .set({ lastMessageAt: new Date() })
       .where(eq(conversations.id, message.conversationId!));
-    
+
     return newMessage;
   }
 
@@ -475,6 +485,76 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
     return user || undefined;
+  }
+
+  // Notifications
+  async createNotification(data: {
+    userId: number;
+    type: 'like' | 'comment' | 'follow' | 'message';
+    fromUserId?: number;
+    gbairaiId?: number;
+    conversationId?: number;
+    message: string;
+  }) {
+    const [notification] = await db.insert(notifications).values({
+      ...data,
+      read: false,
+      createdAt: new Date()
+    }).returning();
+    return notification;
+  }
+
+  async getUserNotifications(userId: number, since?: Date) {
+    let query = db
+      .select({
+        id: notifications.id,
+        type: notifications.type,
+        message: notifications.message,
+        read: notifications.read,
+        createdAt: notifications.createdAt,
+        gbairaiId: notifications.gbairaiId,
+        conversationId: notifications.conversationId,
+        fromUser: {
+          id: users.id,
+          username: users.username,
+        },
+        gbairai: {
+          id: gbairais.id,
+          content: gbairais.content,
+        }
+      })
+      .from(notifications)
+      .leftJoin(users, eq(notifications.fromUserId, users.id))
+      .leftJoin(gbairais, eq(notifications.gbairaiId, gbairais.id))
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt));
+
+    if (since) {
+      query = query.where(and(
+        eq(notifications.userId, userId),
+        gt(notifications.createdAt, since)
+      ));
+    }
+
+    const result = await query.limit(50);
+    return result;
+  }
+
+  async markNotificationAsRead(notificationId: number, userId: number) {
+    await db
+      .update(notifications)
+      .set({ read: true })
+      .where(and(
+        eq(notifications.id, notificationId),
+        eq(notifications.userId, userId)
+      ));
+  }
+
+  async markAllNotificationsAsRead(userId: number) {
+    await db
+      .update(notifications)
+      .set({ read: true })
+      .where(eq(notifications.userId, userId));
   }
 
   async followUser(followerId: number, followingId: number): Promise<Follow> {
@@ -582,7 +662,7 @@ export class DatabaseStorage implements IStorage {
     for (const user of usersData) {
       const stats = await this.getUserStats(user.id);
       const isFollowing = currentUserId ? await this.isFollowing(currentUserId, user.id) : false;
-      
+
       usersWithStats.push({
         ...user,
         ...stats,
@@ -630,7 +710,7 @@ export class MemStorage implements IStorage {
     this.currentInteractionId = 1;
     this.currentConversationId = 1;
     this.currentMessageId = 1;
-    
+
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000,
     });
@@ -698,11 +778,11 @@ export class MemStorage implements IStorage {
       .slice(offset, offset + limit);
 
     const result: GbairaiWithInteractions[] = [];
-    
+
     for (const gbairai of allGbairais) {
       const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
       const user = gbairai.userId ? await this.getUser(gbairai.userId) : undefined;
-      
+
       const likesCount = interactionsData.filter(i => i.type === 'like').length;
       const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
       const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -726,7 +806,7 @@ export class MemStorage implements IStorage {
 
     const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
     const user = gbairai.userId ? await this.getUser(gbairai.userId) : undefined;
-    
+
     const likesCount = interactionsData.filter(i => i.type === 'like').length;
     const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
     const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -748,11 +828,11 @@ export class MemStorage implements IStorage {
       .slice(0, limit);
 
     const result: GbairaiWithInteractions[] = [];
-    
+
     for (const gbairai of filteredGbairais) {
       const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
       const user = gbairai.userId ? await this.getUser(gbairai.userId) : undefined;
-      
+
       const likesCount = interactionsData.filter(i => i.type === 'like').length;
       const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
       const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -776,7 +856,7 @@ export class MemStorage implements IStorage {
         if (g.status !== 'active' || !g.location) return false;
         const gbairaiLocation = g.location as any;
         if (!gbairaiLocation.latitude || !gbairaiLocation.longitude) return false;
-        
+
         const distance = this.calculateDistance(
           location.latitude,
           location.longitude,
@@ -789,11 +869,11 @@ export class MemStorage implements IStorage {
       .slice(0, limit);
 
     const result: GbairaiWithInteractions[] = [];
-    
+
     for (const gbairai of filteredGbairais) {
       const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
       const user = gbairai.userId ? await this.getUser(gbairai.userId) : undefined;
-      
+
       const likesCount = interactionsData.filter(i => i.type === 'like').length;
       const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
       const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -818,11 +898,11 @@ export class MemStorage implements IStorage {
       .slice(0, limit);
 
     const result: GbairaiWithInteractions[] = [];
-    
+
     for (const gbairai of userGbairais) {
       const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
       const user = await this.getUser(gbairai.userId!);
-      
+
       const likesCount = interactionsData.filter(i => i.type === 'like').length;
       const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
       const sharesCount = interactionsData.filter(i => i.type === 'share').length;
@@ -843,7 +923,7 @@ export class MemStorage implements IStorage {
   async deleteGbairai(id: number, userId: number): Promise<boolean> {
     const gbairai = this.gbairais.get(id);
     if (!gbairai || gbairai.userId !== userId) return false;
-    
+
     gbairai.status = 'deleted';
     this.gbairais.set(id, gbairai);
     return true;
@@ -877,7 +957,7 @@ export class MemStorage implements IStorage {
   async deleteInteraction(id: number, userId: number): Promise<boolean> {
     const interaction = this.interactions.get(id);
     if (!interaction || interaction.userId !== userId) return false;
-    
+
     this.interactions.delete(id);
     return true;
   }
@@ -940,7 +1020,7 @@ export class MemStorage implements IStorage {
       type: message.type || 'text',
     };
     this.messages.set(id, newMessage);
-    
+
     // Mettre à jour la dernière activité de la conversation
     if (message.conversationId) {
       const conversation = this.conversations.get(message.conversationId);
@@ -949,7 +1029,7 @@ export class MemStorage implements IStorage {
         this.conversations.set(message.conversationId, conversation);
       }
     }
-    
+
     return newMessage;
   }
 
