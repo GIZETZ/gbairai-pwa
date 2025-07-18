@@ -1,5 +1,6 @@
 import { MobileLayout } from "@/components/Common/MobileLayout";
 import { GbairaiCardMobile } from "@/components/Gbairai/GbairaiCardMobile";
+import { GbairaiFilters } from "@/components/Common/GbairaiFilters";
 import { useGbairais, useGbairaiComments } from "@/hooks/useGbairais";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,13 @@ import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 
 export default function MobileHomePage() {
-  const { data: gbairais, isLoading } = useGbairais();
+  const [filters, setFilters] = useState<{
+    region?: string;
+    followingOnly?: boolean;
+    emotion?: string;
+  }>({});
+  
+  const { data: gbairais, isLoading } = useGbairais(filters);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [location, setLocation] = useLocation();
@@ -124,6 +131,14 @@ export default function MobileHomePage() {
   return (
     <MobileLayout className="p-0">
       <div className="h-full relative bg-background flex justify-center" style={{ alignItems: 'center', paddingTop: '10vh' }}>
+        {/* Filters */}
+        <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/80 to-transparent">
+          <GbairaiFilters 
+            currentFilters={filters}
+            onFilterChange={setFilters}
+          />
+        </div>
+
         {/* Gbairai Container - Rectangle with scroll snap */}
         <div 
           className="scroll-snap-container"
