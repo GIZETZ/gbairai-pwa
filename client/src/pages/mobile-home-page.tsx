@@ -4,13 +4,18 @@ import { GbairaiFilters } from "@/components/Common/GbairaiFilters";
 import { useGbairais, useGbairaiComments } from "@/hooks/useGbairais";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Plus, MessageSquare, Heart, User } from "lucide-react";
+import { Plus, MessageSquare, Heart, User, Bell } from "lucide-react";
 import { Link, useLocation } from "wouter";
+import { Badge } from "@/components/ui/badge";
+import { useQuery } from "@tanstack/react-query";
+import { notificationsApi } from "@/services/api";
+import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 
 export default function MobileHomePage() {
+  const { user } = useAuth();
   const [filters, setFilters] = useState<{
     region?: string;
     followingOnly?: boolean;
@@ -18,6 +23,18 @@ export default function MobileHomePage() {
   }>({});
   
   const { data: gbairais, isLoading } = useGbairais(filters);
+  
+  // Récupérer les notifications pour le badge
+  const { data: notifications = [] } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: notificationsApi.getNotifications,
+    enabled: !!user,
+    refetchInterval: 10000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
+
+  const unreadCount = notifications.filter(n => !n.read).length;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isCommentsOpen, setIsCommentsOpen] = useState(false);
   const [location, setLocation] = useLocation();
@@ -95,7 +112,7 @@ export default function MobileHomePage() {
 
   if (isLoading) {
     return (
-      <MobileLayout>
+      <MobileLayout showTopButtons={false}>
         <div className="h-full flex items-center justify-center">
           <div className="w-full max-w-sm bg-card rounded-xl p-6">
             <Skeleton className="h-6 w-full mb-4" />
@@ -110,7 +127,7 @@ export default function MobileHomePage() {
 
   if (!gbairais || gbairais.length === 0) {
     return (
-      <MobileLayout>
+      <MobileLayout showTopButtons={false}>
         <div className="h-full flex flex-col items-center justify-center px-4">
           <div className="text-center text-muted-foreground mb-8">
             <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-50" />
@@ -129,10 +146,31 @@ export default function MobileHomePage() {
   }
 
   return (
-    <MobileLayout className="p-0">
+    <MobileLayout className="p-0" showTopButtons={false}>
       <div className="h-full relative bg-background flex justify-center" style={{ alignItems: 'center', paddingTop: '10vh' }}>
         {/* Filters */}
-        <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/80 to-transparent">
+        <div className="fixed top-0 left-0 right-0 z-50 p-4 bg-gradient-to-b from-black/90 to-transparent">
+          <div className="flex justify-end items-start mb-4">
+            <div className="flex space-x-2">
+              <Link href="/messages">
+                <Button size="sm" variant="outline" className="bg-white/90 backdrop-blur-sm border-gray-200">
+                  <MessageSquare className="w-4 h-4" />
+                </Button>
+              </Link>
+              
+              <Link href="/notifications">
+                <Button size="sm" variant="outline" className="bg-white/90 backdrop-blur-sm border-gray-200 relative">
+                  <Bell className="w-4 h-4" />
+                  {unreadCount > 0 && (
+                    <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center p-0">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </Badge>
+                  )}
+                </Button>
+              </Link>
+            </div>
+          </div>
+          
           <GbairaiFilters 
             currentFilters={filters}
             onFilterChange={setFilters}
@@ -147,7 +185,8 @@ export default function MobileHomePage() {
             scrollBehavior: 'smooth',
             overscrollBehavior: 'none',
             scrollSnapStop: 'always',
-            overflow: isCommentsOpen ? 'hidden' : 'auto'
+            overflow: isCommentsOpen ? 'hidden' : 'auto',
+            paddingTop: '120px' // Space for fixed filters
           }}
         >
           {gbairais.map((gbairai, index) => (
