@@ -75,6 +75,16 @@ export interface IStorage {
   getUserStats(userId: number): Promise<{ followersCount: number; followingCount: number; gbairaisCount: number; }>;
   searchUsers(query: string, currentUserId?: number): Promise<UserWithStats[]>;
 
+  // Nouveaux filtres
+  getGbairaisFromFollowing(userId: number, limit?: number, offset?: number): Promise<GbairaiWithInteractions[]>;
+  getGbairaisByRegion(region: string, limit?: number, offset?: number): Promise<GbairaiWithInteractions[]>;
+
+  // Notifications
+  createNotification(userId: number, type: string, message: string, fromUserId?: number, gbairaiId?: number): Promise<void>;
+  createNotificationForAllUsers(type: string, message: string, fromUserId?: number, gbairaiId?: number, excludeUserId?: number): Promise<void>;
+  getNotifications(userId: number, limit?: number): Promise<any[]>;
+  markNotificationAsRead(id: number): Promise<boolean>;
+
   sessionStore: any;
 }
 
@@ -673,6 +683,146 @@ export class DatabaseStorage implements IStorage {
     return usersWithStats;
   }
 
+  // Méthodes pour les notifications
+  async createNotification(userId: number, type: string, message: string, fromUserId?: number, gbairaiId?: number): Promise<void> {
+    await db.insert(notifications).values({
+      userId,
+      type,
+      message,
+      fromUserId: fromUserId || null,
+      gbairaiId: gbairaiId || null,
+      read: false
+    });
+  }
+
+  async createNotificationForAllUsers(type: string, message: string, fromUserId?: number, gbairaiId?: number, excludeUserId?: number): Promise<void> {
+    // Récupérer tous les utilisateurs actifs
+    const allUsers = await db.select({ id: users.id }).from(users).where(eq(users.isActive, true));
+    
+    // Créer des notifications pour tous les utilisateurs sauf celui exclu
+    const notificationsToInsert = allUsers
+      .filter(user => excludeUserId ? user.id !== excludeUserId : true)
+      .map(user => ({
+        userId: user.id,
+        type,
+        message,
+        fromUserId: fromUserId || null,
+        gbairaiId: gbairaiId || null,
+        read: false
+      }));
+
+    if (notificationsToInsert.length > 0) {
+      await db.insert(notifications).values(notificationsToInsert);
+    }
+  }
+
+  async getNotifications(userId: number, limit: number = 20): Promise<any[]> {
+    const userNotifications = await db
+      .select({
+        id: notifications.id,
+        type: notifications.type,
+        message: notifications.message,
+        read: notifications.read,
+        createdAt: notifications.createdAt,
+        fromUser: {
+          id: users.id,
+          username: users.username
+        },
+        gbairai: {
+          id: gbairais.id,
+          content: gbairais.content,
+          emotion: gbairais.emotion
+        }
+      })
+      .from(notifications)
+      .leftJoin(users, eq(notifications.fromUserId, users.id))
+      .leftJoin(gbairais, eq(notifications.gbairaiId, gbairais.id))
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+
+    return userNotifications;
+  }
+
+  async markNotificationAsRead(id: number): Promise<boolean> {
+    const result = await db
+      .update(notifications)
+      .set({ read: true })
+      .where(eq(notifications.id, id));
+    
+    return result.rowCount > 0;
+  }
+
+  // Nouveaux filtres
+  async getGbairaisFromFollowing(userId: number, limit: number = 20, offset: number = 0): Promise<GbairaiWithInteractions[]> {
+    const gbairaisData = await db
+      .select()
+      .from(gbairais)
+      .innerJoin(follows, eq(gbairais.userId, follows.followingId))
+      .where(eq(follows.followerId, userId))
+      .orderBy(desc(gbairais.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const result: GbairaiWithInteractions[] = [];
+    for (const item of gbairaisData) {
+      const gbairai = item.gbairais;
+      const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
+      const user = gbairai.userId ? await this.getUser(gbairai.userId) : undefined;
+
+      const likesCount = interactionsData.filter(i => i.type === 'like').length;
+      const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
+      const sharesCount = interactionsData.filter(i => i.type === 'share').length;
+
+      result.push({
+        ...gbairai,
+        interactions: interactionsData,
+        user,
+        likesCount,
+        commentsCount,
+        sharesCount
+      });
+    }
+
+    return result;
+  }
+
+  async getGbairaisByRegion(region: string, limit: number = 20, offset: number = 0): Promise<GbairaiWithInteractions[]> {
+    const gbairaisData = await db
+      .select()
+      .from(gbairais)
+      .where(
+        and(
+          eq(gbairais.status, 'active'),
+          sql`${gbairais.location}->>'region' = ${region}`
+        )
+      )
+      .orderBy(desc(gbairais.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const result: GbairaiWithInteractions[] = [];
+    for (const gbairai of gbairaisData) {
+      const interactionsData = await this.getInteractionsByGbairai(gbairai.id);
+      const user = gbairai.userId ? await this.getUser(gbairai.userId) : undefined;
+
+      const likesCount = interactionsData.filter(i => i.type === 'like').length;
+      const commentsCount = interactionsData.filter(i => i.type === 'comment').length;
+      const sharesCount = interactionsData.filter(i => i.type === 'share').length;
+
+      result.push({
+        ...gbairai,
+        interactions: interactionsData,
+        user,
+        likesCount,
+        commentsCount,
+        sharesCount
+      });
+    }
+
+    return result;
+  }
+
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371; // Radius of the Earth in km
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1121,6 +1271,38 @@ export class MemStorage implements IStorage {
     }
 
     return usersWithStats;
+  }
+
+  // Méthodes pour les notifications (implémentation simplifiée pour MemStorage)
+  async createNotification(userId: number, type: string, message: string, fromUserId?: number, gbairaiId?: number): Promise<void> {
+    // Implémentation simplifiée pour MemStorage - ne stocke pas réellement
+    console.log(`Notification pour utilisateur ${userId}: ${message}`);
+  }
+
+  async createNotificationForAllUsers(type: string, message: string, fromUserId?: number, gbairaiId?: number, excludeUserId?: number): Promise<void> {
+    // Implémentation simplifiée pour MemStorage - ne stocke pas réellement
+    console.log(`Notification globale: ${message}`);
+  }
+
+  async getNotifications(userId: number, limit: number = 20): Promise<any[]> {
+    // Implémentation simplifiée pour MemStorage - retourne un tableau vide
+    return [];
+  }
+
+  async markNotificationAsRead(id: number): Promise<boolean> {
+    // Implémentation simplifiée pour MemStorage
+    return true;
+  }
+
+  // Nouveaux filtres (implémentation simplifiée pour MemStorage)
+  async getGbairaisFromFollowing(userId: number, limit: number = 20, offset: number = 0): Promise<GbairaiWithInteractions[]> {
+    // Implémentation simplifiée - retourne un tableau vide
+    return [];
+  }
+
+  async getGbairaisByRegion(region: string, limit: number = 20, offset: number = 0): Promise<GbairaiWithInteractions[]> {
+    // Implémentation simplifiée - retourne un tableau vide
+    return [];
   }
 
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
