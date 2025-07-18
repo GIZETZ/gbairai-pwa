@@ -37,16 +37,13 @@ const IVORIAN_REGIONS = [
 ];
 
 const EMOTIONS = [
-  { value: "joie", label: "😊 Joie" },
-  { value: "tristesse", label: "😢 Tristesse" },
-  { value: "colère", label: "😠 Colère" },
-  { value: "peur", label: "😨 Peur" },
-  { value: "surprise", label: "😲 Surprise" },
-  { value: "dégoût", label: "🤢 Dégoût" },
-  { value: "amour", label: "❤️ Amour" },
-  { value: "espoir", label: "🌟 Espoir" },
-  { value: "nostalgie", label: "🌅 Nostalgie" },
-  { value: "fierté", label: "💪 Fierté" }
+  { value: "enjaillé", label: "😊 Enjaillé" },
+  { value: "nerveux", label: "😠 Nerveux" },
+  { value: "goumin", label: "😢 Goumin" },
+  { value: "trop fan", label: "❤️ Trop Fan" },
+  { value: "Mais Ahy?", label: "🤔 Mais Ahy?" },
+  { value: "Légé", label: "😌 Légé" },
+  { value: "inclassable", label: "🎨 Inclassable" }
 ];
 
 export function GbairaiFilters({ onFilterChange, currentFilters }: GbairaiFiltersProps) {
@@ -60,6 +57,8 @@ export function GbairaiFilters({ onFilterChange, currentFilters }: GbairaiFilter
       (newFilters as any)[key] = value;
     }
     onFilterChange(newFilters);
+    // Garder le panneau ouvert après sélection
+    // setIsExpanded(true);
   };
 
   const clearAllFilters = () => {
@@ -69,21 +68,27 @@ export function GbairaiFilters({ onFilterChange, currentFilters }: GbairaiFilter
   const activeFiltersCount = Object.keys(currentFilters).length;
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 mt-8">
       {/* Toggle Button */}
-      <Button
-        variant="outline"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full bg-gray-800 border-gray-700 text-white hover:bg-gray-700"
-      >
-        <Filter className="w-4 h-4 mr-2" />
-        Filtres
-        {activeFiltersCount > 0 && (
-          <Badge variant="secondary" className="ml-2">
-            {activeFiltersCount}
-          </Badge>
-        )}
-      </Button>
+      <div className="flex justify-center">
+        <Button
+          variant="outline"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className={`border-gray-700 text-white hover:bg-gray-700 transition-all px-4 py-2 ${
+            isExpanded ? 'bg-gray-700' : 'bg-gray-800'
+          }`}
+        >
+          <Filter className="w-4 h-4 mr-1" />
+          Filtres
+          {activeFiltersCount > 0 && (
+            <Badge variant="secondary" className="ml-1 bg-blue-600 text-white text-xs">
+              {activeFiltersCount}
+            </Badge>
+          )}
+          {isExpanded && <span className="ml-1 text-xs">▲</span>}
+          {!isExpanded && <span className="ml-1 text-xs">▼</span>}
+        </Button>
+      </div>
 
       {/* Filters Panel */}
       {isExpanded && (
@@ -96,14 +101,14 @@ export function GbairaiFilters({ onFilterChange, currentFilters }: GbairaiFilter
                 Région de Côte d'Ivoire
               </label>
               <Select
-                value={currentFilters.region || ""}
-                onValueChange={(value) => updateFilter("region", value || null)}
+                value={currentFilters.region || "all"}
+                onValueChange={(value) => updateFilter("region", value === "all" ? null : value)}
               >
                 <SelectTrigger className="bg-gray-700 border-gray-600 text-white">
                   <SelectValue placeholder="Toutes les régions" />
                 </SelectTrigger>
                 <SelectContent className="bg-gray-700 border-gray-600">
-                  <SelectItem value="">Toutes les régions</SelectItem>
+                  <SelectItem value="all">Toutes les régions</SelectItem>
                   {IVORIAN_REGIONS.map((region) => (
                     <SelectItem key={region.value} value={region.value}>
                       {region.label}
@@ -139,14 +144,14 @@ export function GbairaiFilters({ onFilterChange, currentFilters }: GbairaiFilter
                 😊 Émotion
               </label>
               <Select
-                value={currentFilters.emotion || ""}
-                onValueChange={(value) => updateFilter("emotion", value || null)}
+                value={currentFilters.emotion || "all"}
+                onValueChange={(value) => updateFilter("emotion", value === "all" ? null : value)}
               >
                 <SelectTrigger className="bg-gray-700 border-gray-600 text-white">
                   <SelectValue placeholder="Toutes les émotions" />
                 </SelectTrigger>
                 <SelectContent className="bg-gray-700 border-gray-600">
-                  <SelectItem value="">Toutes les émotions</SelectItem>
+                  <SelectItem value="all">Toutes les émotions</SelectItem>
                   {EMOTIONS.map((emotion) => (
                     <SelectItem key={emotion.value} value={emotion.value}>
                       {emotion.label}
