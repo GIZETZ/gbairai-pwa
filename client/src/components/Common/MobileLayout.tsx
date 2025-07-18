@@ -12,9 +12,10 @@ import { useAuth } from "@/hooks/use-auth";
 interface MobileLayoutProps {
   children: ReactNode;
   className?: string;
+  showTopButtons?: boolean;
 }
 
-export function MobileLayout({ children, className }: MobileLayoutProps) {
+export function MobileLayout({ children, className, showTopButtons = true }: MobileLayoutProps) {
   const { user } = useAuth();
 
   // Récupérer les notifications
