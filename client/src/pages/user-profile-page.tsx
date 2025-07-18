@@ -79,15 +79,30 @@ export default function UserProfilePage() {
   // Mutation pour suivre/ne plus suivre
   const followMutation = useMutation({
     mutationFn: async (action: 'follow' | 'unfollow') => {
-      if (action === 'follow') {
-        const response = await apiRequest('POST', `/api/users/${userId}/follow`);
-        return response;
-      } else {
-        const response = await apiRequest('DELETE', `/api/users/${userId}/follow`);
-        return response;
+      try {
+        if (action === 'follow') {
+          const response = await apiRequest('POST', `/api/users/${userId}/follow`);
+          return { action, response };
+        } else {
+          const response = await apiRequest('DELETE', `/api/users/${userId}/follow`);
+          return { action, response };
+        }
+      } catch (error: any) {
+        console.error('Erreur dans followMutation:', error);
+        throw error;
       }
     },
     onSuccess: (data, variables) => {
+      // Mettre à jour l'état local immédiatement
+      queryClient.setQueryData([`/api/users/${userId}/profile`], (old: any) => ({
+        ...old,
+        isFollowing: variables === 'follow',
+        followersCount: old?.followersCount ? (
+          variables === 'follow' ? old.followersCount + 1 : old.followersCount - 1
+        ) : 0
+      }));
+
+      // Invalider les queries pour synchroniser
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/profile`] });
       queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/followers`] });
       queryClient.invalidateQueries({ queryKey: ['/api/users/search'] });
@@ -98,45 +113,33 @@ export default function UserProfilePage() {
         description: variables === 'follow' ? 'Vous suivez maintenant cet utilisateur' : 'Vous ne suivez plus cet utilisateur',
       });
     },
-    onError: async (error: any) => {
-      // Gestion spécifique des erreurs de suivi
+    onError: (error: any, variables) => {
+      console.error('Erreur follow/unfollow:', error);
+      
       let errorMessage = 'Une erreur est survenue';
       
-      try {
-        // Essayer de parser la réponse JSON de l'erreur
-        const errorData = await error.response?.json();
-        if (errorData?.error) {
-          errorMessage = errorData.error;
-          
-          // Si c'est une erreur "déjà suivi", mettre à jour l'état local
-          if (errorData.error.includes('déjà')) {
-            queryClient.setQueryData([`/api/users/${userId}/profile`], (old: any) => ({
-              ...old,
-              isFollowing: true
-            }));
-            return; // Ne pas afficher d'erreur, juste mettre à jour l'état
-          }
-        }
-      } catch (parseError) {
-        // Si le parsing échoue, utiliser le message d'erreur basique
-        if (error.message?.includes('déjà')) {
-          // Mettre à jour l'état local et ne pas afficher d'erreur
+      // Gestion des erreurs spécifiques
+      if (error.response?.status === 400) {
+        if (error.message?.includes('déjà') || error.response?.data?.error?.includes('déjà')) {
+          // L'utilisateur suit déjà - mettre à jour l'état sans erreur
           queryClient.setQueryData([`/api/users/${userId}/profile`], (old: any) => ({
             ...old,
             isFollowing: true
           }));
           return;
-        } else if (error.message?.includes('suivez pas')) {
-          errorMessage = 'Vous ne suivez pas cet utilisateur';
-        } else if (error.message?.includes('vous-même')) {
+        } else if (error.message?.includes('vous-même') || error.response?.data?.error?.includes('vous-même')) {
           errorMessage = 'Vous ne pouvez pas vous suivre vous-même';
-        } else if (error.message) {
-          errorMessage = error.message;
+        } else if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
         }
+      } else if (error.response?.status === 404) {
+        errorMessage = variables === 'unfollow' ? 'Vous ne suivez pas cet utilisateur' : 'Utilisateur non trouvé';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Vous devez être connecté pour effectuer cette action';
       }
       
       // Rafraîchir les données du profil pour synchroniser l'état
-      await queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/profile`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/users/${userId}/profile`] });
       
       toast({
         title: 'Erreur',
