@@ -304,6 +304,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         parentCommentId: req.body.parentCommentId || null
       });
 
+      // Créer une notification pour le propriétaire du Gbairai
+      const gbairai = await storage.getGbairaiById(gbairaiId);
+      if (gbairai && gbairai.userId !== req.user?.id) {
+        const currentUser = await storage.getUser(req.user?.id || 0);
+        let notificationMessage = '';
+        
+        switch (type) {
+          case 'like':
+            notificationMessage = `${currentUser?.username} a aimé votre Gbairai`;
+            break;
+          case 'comment':
+            notificationMessage = `${currentUser?.username} a commenté votre Gbairai`;
+            break;
+          case 'share':
+            notificationMessage = `${currentUser?.username} a partagé votre Gbairai`;
+            break;
+        }
+
+        if (notificationMessage) {
+          await storage.createNotification({
+            userId: gbairai.userId,
+            type: type as 'like' | 'comment',
+            fromUserId: req.user?.id,
+            gbairaiId,
+            message: notificationMessage
+          });
+        }
+      }
+
       res.status(201).json({ success: true, interaction, action: 'created' });
     } catch (error) {
       console.error('Erreur création interaction:', error);
@@ -910,44 +939,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/notifications", requireAuth, async (req, res) => {
     try {
       const userId = req.user?.id || 0;
+      const since = req.query.since ? new Date(req.query.since as string) : undefined;
 
-      // Pour l'instant, on simule les notifications
-      // En production, on récupérerait les vraies notifications depuis la base de données
-      const notifications = [
-        {
-          id: 1,
-          type: 'like',
-          message: 'Le faucheur a aimé votre Gbairai',
-          createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-          read: false,
-          fromUser: { id: 2, username: 'Le faucheur' },
-          gbairai: { id: 8, content: 'Voici mon message de test' }
-        },
-        {
-          id: 2,
-          type: 'follow',
-          message: 'Le faucheur a commencé à vous suivre',
-          createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-          read: false,
-          fromUser: { id: 2, username: 'Le faucheur' }
-        },
-        {
-          id: 3,
-          type: 'comment',
-          message: 'Le faucheur a commenté votre Gbairai',
-          createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-          read: true,
-          fromUser: { id: 2, username: 'Le faucheur' },
-          gbairai: { id: 6, content: 'Bon matin à tous' }
-        },
-        {
-          id: 4,
-          type: 'system',
-          message: 'Bienvenue sur Gbairai ! Partagez vos premières émotions avec la communauté.',
-          createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          read: true
-        }
-      ];
+      const notifications = await storage.getUserNotifications(userId, since);
+
+      // Ajouter un header pour indiquer s'il y a de nouvelles notifications
+      const hasNewNotifications = notifications.some(n => !n.read);
+      res.setHeader('X-Has-New-Notifications', hasNewNotifications.toString());
 
       res.json(notifications);
     } catch (error) {
@@ -962,9 +960,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notificationId = parseInt(req.params.id);
       const userId = req.user?.id || 0;
 
-      // Pour l'instant, on simule juste la mise à jour
-      // En production, on mettrait à jour la notification dans la base de données
-      console.log(`Notification ${notificationId} marquée comme lue pour l'utilisateur ${userId}`);
+      await storage.markNotificationAsRead(notificationId, userId);
 
       res.json({ success: true });
     } catch (error) {
@@ -978,9 +974,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user?.id || 0;
 
-      // Pour l'instant, on simule juste la mise à jour
-      // En production, on marquerait toutes les notifications de l'utilisateur comme lues
-      console.log(`Toutes les notifications marquées comme lues pour l'utilisateur ${userId}`);
+      await storage.markAllNotificationsAsRead(userId);
 
       res.json({ success: true });
     } catch (error) {
