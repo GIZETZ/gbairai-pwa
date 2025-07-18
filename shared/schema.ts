@@ -66,6 +66,18 @@ export const follows = pgTable("follows", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  type: text("type").notNull(), // 'like', 'comment', 'follow', 'message'
+  message: text("message").notNull(),
+  fromUserId: integer("from_user_id").references(() => users.id),
+  gbairaiId: integer("gbairai_id").references(() => gbairais.id),
+  conversationId: integer("conversation_id").references(() => conversations.id),
+  read: boolean("read").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   gbairais: many(gbairais),
@@ -131,6 +143,25 @@ export const followsRelations = relations(follows, ({ one }) => ({
   }),
 }));
 
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+  }),
+  fromUser: one(users, {
+    fields: [notifications.fromUserId],
+    references: [users.id],
+  }),
+  gbairai: one(gbairais, {
+    fields: [notifications.gbairaiId],
+    references: [gbairais.id],
+  }),
+  conversation: one(conversations, {
+    fields: [notifications.conversationId],
+    references: [conversations.id],
+  }),
+}));
+
 // Schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -192,6 +223,7 @@ export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Follow = typeof follows.$inferSelect;
 export type InsertFollow = z.infer<typeof insertFollowSchema>;
+export type Notification = typeof notifications.$inferSelect;
 
 // Extended types for UI
 export type GbairaiWithInteractions = Gbairai & {
