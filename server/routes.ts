@@ -152,9 +152,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = parseInt(req.query.offset as string) || 0;
       const emotion = req.query.emotion as string;
+      const region = req.query.region as string;
+      const followingOnly = req.query.followingOnly === 'true';
+      const userId = req.user?.id;
 
       let gbairais;
-      if (emotion) {
+      
+      if (followingOnly && userId) {
+        // Récupérer les gbairais des utilisateurs suivis
+        gbairais = await storage.getGbairaisFromFollowing(userId, limit, offset);
+      } else if (region) {
+        // Filtrer par région de Côte d'Ivoire
+        gbairais = await storage.getGbairaisByRegion(region, limit, offset);
+      } else if (emotion) {
         gbairais = await storage.getGbairaisByEmotion(emotion, limit);
       } else {
         gbairais = await storage.getGbairais(limit, offset);
@@ -193,8 +203,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/gbairais", requireAuth, async (req, res) => {
     try {
+      console.log('Données reçues:', req.body);
+      console.log('Utilisateur:', req.user);
+      
       const validationResult = insertGbairaiSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.log('Erreur validation:', validationResult.error.issues);
         return res.status(400).json({ 
           error: 'Données invalides',
           details: validationResult.error.issues 
@@ -233,6 +247,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isAnonymous: isAnonymous !== false,
         metadata: {}
       });
+
+      // Envoyer notification à tous les utilisateurs
+      const authorName = isAnonymous !== false ? "Quelqu'un" : req.user?.username || "Un utilisateur";
+      const notificationMessage = `${authorName} a publié un nouveau gbairai avec l'émotion "${emotion}"`;
+      
+      try {
+        await storage.createNotificationForAllUsers(
+          'new_post',
+          notificationMessage,
+          req.user?.id,
+          gbairai.id,
+          req.user?.id // Exclure l'auteur
+        );
+        console.log(`Notifications envoyées pour le gbairai ${gbairai.id}`);
+      } catch (error) {
+        console.error('Erreur envoi notifications:', error);
+        // Ne pas faire échouer la création du gbairai si les notifications échouent
+      }
 
       res.status(201).json(gbairai);
     } catch (error) {
@@ -941,7 +973,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user?.id || 0;
       const since = req.query.since ? new Date(req.query.since as string) : undefined;
 
-      const notifications = await storage.getUserNotifications(userId, since);
+      const notifications = await storage.getNotifications(userId, 20);
 
       // Ajouter un header pour indiquer s'il y a de nouvelles notifications
       const hasNewNotifications = notifications.some(n => !n.read);
@@ -960,7 +992,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notificationId = parseInt(req.params.id);
       const userId = req.user?.id || 0;
 
-      await storage.markNotificationAsRead(notificationId, userId);
+      await storage.markNotificationAsRead(notificationId);
 
       res.json({ success: true });
     } catch (error) {
@@ -974,7 +1006,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user?.id || 0;
 
-      await storage.markAllNotificationsAsRead(userId);
+      // Marquer toutes les notifications comme lues pour l'utilisateur
+      const userNotifications = await storage.getNotifications(userId, 100);
+      for (const notification of userNotifications) {
+        if (!notification.read) {
+          await storage.markNotificationAsRead(notification.id);
+        }
+      }
 
       res.json({ success: true });
     } catch (error) {
