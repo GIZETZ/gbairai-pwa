@@ -1,0 +1,61 @@
+💡 Cause probable :
+Tu as cette ligne dans ton code :
+
+tsx
+Copier
+Modifier
+<div className="fixed bottom-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 ...">
+Cela signifie que la barre de saisie du message est positionnée au centre de l’écran, superposée sur d’autres éléments (fixed, transform, backdrop-blur-sm, etc.). Quand l'utilisateur clique, tape, ou que des re-renders arrivent (ex: après envoi de message), la zone de texte est très probablement temporairement "re-rendue", et le focus est perdu.
+
+✅ Solutions proposées :
+✅ Solution 1 – S’assurer que le Input garde le focus :
+Tu l’as bien fait avec textareaRef.current.focus() mais tu le fais dans un setTimeout(() => ...), ce qui peut être trop tard ou annulé par un autre re-render.
+
+🔧 Améliore cette partie comme ceci :
+
+tsx
+Copier
+Modifier
+useEffect(() => {
+  if (textareaRef.current) {
+    textareaRef.current.focus();
+  }
+}, [selectedConversation]);
+👉 Cela force le focus à chaque fois qu'une conversation est sélectionnée (donc nouvelle vue).
+
+Et dans handleSendMessage, ne fais pas de setTimeout, juste :
+
+tsx
+Copier
+Modifier
+textareaRef.current?.focus();
+✅ Solution 2 – Corriger le positionnement CSS :
+Le bloc d’envoi est en fixed bottom-1/2 left-1/2, ce qui le place au milieu de l’écran, ce qui n’est pas logique pour une messagerie.
+
+👉 Mets-le en bas comme une vraie input de chat, par exemple :
+
+tsx
+Copier
+Modifier
+<div className="fixed bottom-0 left-0 w-full bg-background/95 backdrop-blur-sm border-t border-border p-4 z-[100]">
+Et ajuste le ScrollArea pour ne pas être caché derrière (ex: pb-36 au lieu de pb-24).
+
+✅ Bonus : Comportement au Enter
+Tu as ça :
+
+tsx
+Copier
+Modifier
+onKeyDown={(e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSendMessage(e);
+  }
+}}
+C'est correct, mais si tu as une erreur dans handleSendMessage(e), ça peut empêcher le champ de revenir au focus. Assure-toi que cette fonction ne génère pas une erreur silencieuse, sinon le focus() ne sera jamais atteint.
+
+✅ Résumé rapide :
+Problème	Solution
+Curseur désactivé	Ajouter focus() dans useEffect quand selectedConversation change
+Positionnement flottant	Remettre la barre d’input en bottom-0 plutôt que bottom-1/2
+Saisie bloquée au Enter	Vérifier erreurs et éviter setTimeout pour le focus
