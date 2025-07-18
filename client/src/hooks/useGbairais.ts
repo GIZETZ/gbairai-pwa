@@ -7,6 +7,8 @@ export function useGbairais(params?: {
   limit?: number;
   offset?: number;
   emotion?: string;
+  region?: string;
+  followingOnly?: boolean;
 }) {
   return useQuery<GbairaiWithInteractions[], Error>({
     queryKey: ["/api/gbairais", params],
