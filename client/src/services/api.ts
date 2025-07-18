@@ -12,11 +12,15 @@ export const gbairaiApi = {
     limit?: number;
     offset?: number;
     emotion?: string;
+    region?: string;
+    followingOnly?: boolean;
   }): Promise<GbairaiWithInteractions[]> => {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.append('limit', params.limit.toString());
     if (params?.offset) searchParams.append('offset', params.offset.toString());
     if (params?.emotion) searchParams.append('emotion', params.emotion);
+    if (params?.region) searchParams.append('region', params.region);
+    if (params?.followingOnly) searchParams.append('followingOnly', 'true');
     
     const response = await fetch(`/api/gbairais?${searchParams}`);
     if (!response.ok) throw new Error('Failed to fetch gbairais');
